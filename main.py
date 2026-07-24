@@ -5,7 +5,6 @@ from flask import Flask, request, jsonify, redirect
 
 app = Flask(__name__)
 
-# Nombre exacto de tu archivo de cookies
 COOKIES_FILE = 'cookies.txt'
 
 @app.route('/get_stream', methods=['GET'])
@@ -15,32 +14,33 @@ def get_stream():
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
     try:
-        # Extraer ID del video
+        # 1. Extraer ID del video o directo
         match = re.search(r'(?:v=|/live/|/embed/|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
         if not match:
             return jsonify({'status': 'error', 'message': 'ID de video no válido'}), 400
         
         target_url = f"https://www.youtube.com/watch?v={match.group(1)}"
 
-        # Comando yt-dlp simplificado para streams en vivo
+        # 2. Comando yt-dlp forzando clientes móviles (iOS / Android)
         cmd = [
             'yt-dlp',
             '-g',
+            '--extractor-args', 'youtube:player_client=ios,android,mweb',
             '--no-warnings',
             '--no-playlist'
         ]
 
-        # Agregar cookies si existen
+        # 3. Incluir cookies si existen
         if os.path.exists(COOKIES_FILE):
             cmd.extend(['--cookies', COOKIES_FILE])
 
         cmd.append(target_url)
 
-        # Ejecutar proceso
+        # 4. Ejecutar el proceso
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
 
         if result.returncode == 0 and result.stdout.strip():
-            # Obtener la primera URL generada (manifiesto m3u8)
+            # Obtener el primer enlace m3u8 devuelto
             m3u8_url = result.stdout.strip().split('\n')[0]
             return redirect(m3u8_url, code=302)
         else:
