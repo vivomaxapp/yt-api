@@ -10,14 +10,14 @@ def get_stream():
     if not url:
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
-    # Cambiar el cliente de extracción a android/web_embedded para evadir el bloqueo de bot
+    # Configuración de clientes inmunes a la detección de bots en datacenter
     ydl_opts = {
         'format': 'best',
         'quiet': True,
         'no_warnings': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web_embedded']
+                'player_client': ['ios', 'tvhtml5_embedded', 'mweb']
             }
         }
     }
@@ -26,7 +26,7 @@ def get_stream():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # Obtener enlace m3u8 directo
+            # Obtener el enlace directo (.m3u8)
             stream_url = info.get('url')
             
             if stream_url:
