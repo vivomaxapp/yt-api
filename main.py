@@ -1,7 +1,7 @@
 import os
 import re
-import requests
-from flask import Flask, jsonify, request, redirect
+from flask import Flask, request, jsonify, redirect
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -12,31 +12,41 @@ def get_stream():
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
     try:
-        # 1. Extraer el ID del video (Soporta watch, live, embed, youtu.be)
-        video_id_match = re.search(r'(?:v=|/live/|/embed/|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
-        if not video_id_match:
-            return jsonify({'status': 'error', 'message': 'ID de video no válido'}), 400
-
-        video_id = video_id_match.group(1)
-
-        # 2. Consultar el embed con un User-Agent moderno
-        embed_url = f"https://www.youtube.com/embed/{video_id}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9'
+        # Configuración de yt-dlp optimizada para extraer enlaces directos m3u8
+        ydl_opts = {
+            'format': 'best',
+            'quiet': True,
+            'no_warnings': True,
+            # Forzar clientes móbiles ayuda a evitar bloqueos de IP de data centers (Render)
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios']
+                }
+            }
         }
-        response = requests.get(embed_url, headers=headers, timeout=10)
 
-        # 3. Buscar hlsManifestUrl o cualquier enlace .m3u8 en el HTML/JS
-        # Esta Regex busca la URL del m3u8 sin importar cuántas barras '\\' tenga escapadas
-        match = re.search(r'hlsManifestUrl["\']:\s*["\'](https?://[^"\']+\.m3u8)', response.text.replace('\\/', '/'))
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            # Buscar el enlace del manifiesto m3u8 / HLS
+            m3u8_url = info.get('url')
+            
+            # Si no está directamente en 'url', buscar en los formatos disponibles
+            if not m3u8_url or '.m3u8' not in m3u8_url:
+                formats = info.get('formats', [])
+                for f in formats:
+                    if f.get('protocol') in ['m3u8', 'm3u8_native'] or '.m3u8' in f.get('url', ''):
+                        m3u8_url = f.get('url')
+                        break
 
-        if match:
-            m3u8_url = match.group(1)
-            # Redirige directamente al flujo .m3u8 que los reproductores (IPTV/Android) pueden reproducir
-            return redirect(m3u8_url, code=302)
-        else:
-            return jsonify({'status': 'error', 'message': 'No se encontró el enlace .m3u8 o la transmisión no está en vivo'}), 404
+            if m3u8_url:
+                # Redirige directamente al enlace .m3u8 funcional
+                return redirect(m3u8_url, code=302)
+            else:
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'No se encontró el enlace .m3u8 o la transmisión no está en vivo'
+                }), 404
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
