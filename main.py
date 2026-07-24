@@ -5,7 +5,8 @@ from flask import Flask, request, jsonify, redirect
 
 app = Flask(__name__)
 
-COOKIES_FILE = 'www.youtube.com_cookies.txt'
+# Nombre exacto de tu archivo de cookies
+COOKIES_FILE = 'cookies.txt'
 
 @app.route('/get_stream', methods=['GET'])
 def get_stream():
@@ -21,25 +22,25 @@ def get_stream():
         
         target_url = f"https://www.youtube.com/watch?v={match.group(1)}"
 
-        # Construir comando yt-dlp para obtener la URL del manifiesto/stream
+        # Comando yt-dlp simplificado para streams en vivo
         cmd = [
             'yt-dlp',
             '-g',
-            '-f', 'b',
             '--no-warnings',
             '--no-playlist'
         ]
 
-        # Agregar flag de cookies si el archivo existe
+        # Agregar cookies si existen
         if os.path.exists(COOKIES_FILE):
             cmd.extend(['--cookies', COOKIES_FILE])
 
         cmd.append(target_url)
 
-        # Ejecutar yt-dlp
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        # Ejecutar proceso
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
 
         if result.returncode == 0 and result.stdout.strip():
+            # Obtener la primera URL generada (manifiesto m3u8)
             m3u8_url = result.stdout.strip().split('\n')[0]
             return redirect(m3u8_url, code=302)
         else:
