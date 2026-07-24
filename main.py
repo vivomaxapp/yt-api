@@ -1,5 +1,5 @@
 import os
-import subprocess
+import yt_dlp
 from flask import Flask, jsonify, request, redirect
 
 app = Flask(__name__)
@@ -10,13 +10,26 @@ def get_stream():
     if not url:
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
+    # Configuración nativa de yt-dlp para extraer enlaces en directo de YouTube
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True,
+        'force_generic_extractor': False
+    }
+
     try:
-        # Extraer el enlace m3u8 con yt-dlp
-        command = ["yt-dlp", "-g", url]
-        stream_url = subprocess.check_output(command).decode('utf-8').strip()
-        
-        # Redirigir directamente al reproductor
-        return redirect(stream_url, code=302)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            # Obtener el enlace m3u8 o mpd
+            stream_url = info.get('url')
+            
+            if stream_url:
+                return redirect(stream_url, code=302)
+            else:
+                return jsonify({'status': 'error', 'message': 'No se encontró enlace ejecutable'}), 500
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
