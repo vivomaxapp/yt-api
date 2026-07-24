@@ -1,9 +1,17 @@
 import os
 import re
+import requests
 from flask import Flask, request, jsonify, redirect
-import yt_dlp
 
 app = Flask(__name__)
+
+# Lista de instancias públicas de Invidious para fallback si una falla
+INVIDIOUS_INSTANCES = [
+    "https://inv.tux.pizza",
+    "https://invidious.nerdvpn.de",
+    "https://invidious.drgns.space",
+    "https://vid.puffyan.us"
+]
 
 @app.route('/get_stream', methods=['GET'])
 def get_stream():
@@ -12,41 +20,32 @@ def get_stream():
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
     try:
-        # Configuración de yt-dlp optimizada para extraer enlaces directos m3u8
-        ydl_opts = {
-            'format': 'best',
-            'quiet': True,
-            'no_warnings': True,
-            # Forzar clientes móbiles ayuda a evitar bloqueos de IP de data centers (Render)
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'ios']
-                }
-            }
-        }
+        # Extraer el ID del video
+        match = re.search(r'(?:v=|/live/|/embed/|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
+        if not match:
+            return jsonify({'status': 'error', 'message': 'ID de video no válido'}), 400
+        
+        video_id = match.group(1)
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            # Buscar el enlace del manifiesto m3u8 / HLS
-            m3u8_url = info.get('url')
-            
-            # Si no está directamente en 'url', buscar en los formatos disponibles
-            if not m3u8_url or '.m3u8' not in m3u8_url:
-                formats = info.get('formats', [])
-                for f in formats:
-                    if f.get('protocol') in ['m3u8', 'm3u8_native'] or '.m3u8' in f.get('url', ''):
-                        m3u8_url = f.get('url')
+        # Consultar la API de Invidious
+        m3u8_url = None
+        for instance in INVIDIOUS_INSTANCES:
+            try:
+                api_url = f"{instance}/api/v1/videos/{video_id}"
+                resp = requests.get(api_url, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Invidious entrega la URL HLS del directo aquí:
+                    m3u8_url = data.get('hlsUrl')
+                    if m3u8_url:
                         break
+            except Exception:
+                continue
 
-            if m3u8_url:
-                # Redirige directamente al enlace .m3u8 funcional
-                return redirect(m3u8_url, code=302)
-            else:
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'No se encontró el enlace .m3u8 o la transmisión no está en vivo'
-                }), 404
+        if m3u8_url:
+            return redirect(m3u8_url, code=302)
+        else:
+            return jsonify({'status': 'error', 'message': 'No se encontró la transmisión o la IP fue restringida'}), 404
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
