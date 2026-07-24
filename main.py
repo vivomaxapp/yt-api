@@ -10,19 +10,23 @@ def get_stream():
     if not url:
         return jsonify({'status': 'error', 'message': 'Falta el parámetro url'}), 400
 
-    # Configuración nativa de yt-dlp para extraer enlaces en directo de YouTube
+    # Cambiar el cliente de extracción a android/web_embedded para evadir el bloqueo de bot
     ydl_opts = {
         'format': 'best',
         'quiet': True,
         'no_warnings': True,
-        'force_generic_extractor': False
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web_embedded']
+            }
+        }
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # Obtener el enlace m3u8 o mpd
+            # Obtener enlace m3u8 directo
             stream_url = info.get('url')
             
             if stream_url:
