@@ -19,47 +19,31 @@ def get_stream():
         
         video_id = match.group(1)
 
-        # 2. Consultar la API interna de YouTube emulando la App de iOS (evita bloqueos de Cloud/Render)
-        player_url = "https://www.youtube.com/youtubei/v1/player"
-        payload = {
-            "videoId": video_id,
-            "context": {
-                "client": {
-                    "clientName": "IOS",
-                    "clientVersion": "19.29.1",
-                    "deviceModel": "iPhone14,3",
-                    "osName": "iOS",
-                    "osVersion": "17.5.1.21F90"
-                }
-            }
-        }
-        
+        # 2. Consultar la versión de video directamente con un User-Agent de Android
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
         headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone14,3; U; CPU iOS 17_5_1 like Mac OS X; en_US)'
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
         }
 
-        response = requests.post(player_url, json=payload, headers=headers, timeout=10)
+        response = requests.get(watch_url, headers=headers, timeout=10)
         
         if response.status_code == 200:
-            data = response.json()
-            streaming_data = data.get('streamingData', {})
+            # 3. Extraer la URL del m3u8 del manifiesto HLS en el JS subyacente
+            hls_match = re.search(r'["\']hlsManifestUrl["\']:\s*["\'](https?://[^"\']+\.m3u8)', response.text.replace('\\/', '/'))
             
-            # Obtener la URL del manifesto HLS (.m3u8) directo para el directo
-            hls_manifest_url = streaming_data.get('hlsManifestUrl')
-            
-            if hls_manifest_url:
-                # Redirección directa al .m3u8 ejecutable
-                return redirect(hls_manifest_url, code=302)
+            if hls_match:
+                m3u8_url = hls_match.group(1)
+                return redirect(m3u8_url, code=302)
             else:
                 return jsonify({
                     'status': 'error', 
-                    'message': 'El video no es una transmisión en vivo activa o no tiene formato HLS'
+                    'message': 'No se encontró el enlace .m3u8 o la transmisión no está en vivo'
                 }), 404
         else:
             return jsonify({
                 'status': 'error', 
-                'message': f'Error en la API de YouTube ({response.status_code})'
+                'message': f'Error al conectar con YouTube ({response.status_code})'
             }), 500
 
     except Exception as e:
